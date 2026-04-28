@@ -1,0 +1,126 @@
+# This Python 3 environment comes with many helpful analytics libraries installed
+# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
+# For example, here's several helpful packages to load
+
+import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+
+# Input data files are available in the read-only "../input/" directory
+# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
+
+import os
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+
+# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
+# /kaggle/input/paysim1/PS_20174392719_1491204439457_log.csv
+
+# Basic libraries for data manipulation
+import pandas as pd
+import numpy as np
+import xgboost as xgb
+
+# Visualization libraries
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Machine Learning libraries
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+
+# Ignore warnings for better readability
+import warnings
+warnings.filterwarnings('ignore')
+
+# Set a visual styles
+sns.set_style("whitegrid")
+
+file_path = "/kaggle/input/paysim1/PS_20174392719_1491204439457_log.csv"
+df = pd.read_csv(file_path)
+df.head()
+
+df.info()
+df.describe()
+df.isnull().sum()
+
+# Count fraud vs. non-fraud transactions
+fraud_counts = df['isFraud'].value_counts()
+print(fraud_counts)
+
+plt.figure(figsize=(6, 4))
+sns.barplot(x=fraud_counts.index, y=fraud_counts.values, palette="coolwarm")
+plt.xticks([0, 1], ["Not Fraud", "Fraud"])
+plt.xlabel("Transaction Type")
+plt.ylabel("Count")
+plt.title("Distribution of Fraudulent Transactions")
+plt.show()
+
+# Count transaction types
+plt.figure(figsize=(8, 4))
+sns.countplot(data=df, x="type", palette="viridis", order=df["type"].value_counts().index)
+plt.title("Transaction Types Distribution")
+plt.show()# Fraud percentage per transaction type
+fraud_by_type = df.groupby("type")["isFraud"].mean().sort_values(ascending=False)
+print(fraud_by_type)
+
+df = df.drop(['nameOrig', 'nameDest'], axis=1)
+# Convert 'type' to numerical values using Label Encoding
+encoder = LabelEncoder()
+df["type"] = encoder.fit_transform(df["type"])
+# Downsample majority class (non-fraud transactions) to match the minority class
+fraud = df[df["isFraud"] == 1]
+non_fraud = df[df["isFraud"] == 0].sample(n=len(fraud), random_state=42)
+
+# Combine fraud and non-fraud samples
+balanced_df = pd.concat([fraud, non_fraud])
+
+# Shuffle dataset
+balanced_df = balanced_df.sample(frac=1, random_state=42).reset_index(drop=True)
+X = balanced_df.drop("isFraud", axis=1)
+y = balanced_df["isFraud"]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+model = RandomForestClassifier(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+y_pred = model.predict(X_test)
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("Classification Report:\n", classification_report(y_test, y_pred))
+
+cm = confusion_matrix(y_test, y_pred)
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="coolwarm", xticklabels=["Not Fraud", "Fraud"], yticklabels=["Not Fraud", "Fraud"])
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
+
+
+from sklearn.metrics import classification_report
+xgb_model = xgb.XGBClassifier(use_label_encoder=False, eval_metric="logloss")
+xgb_model.fit(X_train, y_train)
+y_pred_xgb = xgb_model.predict(X_test)
+print(classification_report(y_test, y_pred_xgb))
+
+train_acc = xgb_model.score(X_train, y_train)
+test_acc = xgb_model.score(X_test, y_test)
+
+print(f"Training Accuracy: {train_acc:.4f}")
+print(f"Test Accuracy: {test_acc:.4f}")
+print(classification_report(y_test, y_pred_xgb))
+from sklearn.model_selection import cross_val_score
+
+cv_scores = cross_val_score(xgb_model, X, y, cv=5, scoring='accuracy')
+
+print(f"Cross-validation Accuracy Scores: {cv_scores}")
+print(f"Mean Accuracy: {cv_scores.mean():.4f}") 
+
+y_pred = xgb_model.predict(X_test)
+results_df = X_test.copy()
+results_df['Predicted_Fraud'] = y_pred
+results_df['Actual_Fraud'] = y_test.values  
+results_df.to_csv("/kaggle/working/fraud_predictions.csv", index=False)
+print("✅ Predictions saved as fraud_predictions.csv")
